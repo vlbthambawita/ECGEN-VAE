@@ -232,10 +232,10 @@ class VectorQuantiser(nn.Module):
         z_q_flat = self.embedding(codes)
 
         if self.use_ema and self.training:
-            one_hot = F.one_hot(codes, self.n_embeddings).float()
+            one_hot = F.one_hot(codes.detach(), self.n_embeddings).float()
             self.ema_cluster_size.mul_(self.ema_decay).add_(
                 one_hot.sum(0), alpha=1 - self.ema_decay)
-            dw = one_hot.T @ z_flat
+            dw = one_hot.T @ z_flat.detach()
             self.ema_dw.mul_(self.ema_decay).add_(dw, alpha=1 - self.ema_decay)
             n = self.ema_cluster_size.sum()
             smoothed = (self.ema_cluster_size + 1e-5) / (n + self.n_embeddings * 1e-5) * n
@@ -701,14 +701,17 @@ class VQVAE2Lightning(pl.LightningModule):
         if stage == "val":
             self.log("val_loss", total_loss, prog_bar=True, on_epoch=True, on_step=False)
 
-        unique_codes_bot = torch.unique(codes_bot).numel()
-        unique_codes_top = torch.unique(codes_top).numel()
-        self.log(f"{stage}/unique_codes_bot", float(unique_codes_bot), on_epoch=True, on_step=False)
-        self.log(f"{stage}/unique_codes_top", float(unique_codes_top), on_epoch=True, on_step=False)
-        self.log(f"{stage}/codebook_usage_bot", 
-                 float(unique_codes_bot) / self.config.n_embeddings_bot, on_epoch=True, on_step=False)
-        self.log(f"{stage}/codebook_usage_top", 
-                 float(unique_codes_top) / self.config.n_embeddings_top, on_epoch=True, on_step=False)
+        # Compute codebook usage less frequently to save memory and compute
+        should_log_codes = (stage == "val") or (self.trainer.global_step % 50 == 0)
+        if should_log_codes:
+            unique_codes_bot = torch.unique(codes_bot.detach()).numel()
+            unique_codes_top = torch.unique(codes_top.detach()).numel()
+            self.log(f"{stage}/unique_codes_bot", float(unique_codes_bot), on_epoch=True, on_step=False)
+            self.log(f"{stage}/unique_codes_top", float(unique_codes_top), on_epoch=True, on_step=False)
+            self.log(f"{stage}/codebook_usage_bot", 
+                     float(unique_codes_bot) / self.config.n_embeddings_bot, on_epoch=True, on_step=False)
+            self.log(f"{stage}/codebook_usage_top", 
+                     float(unique_codes_top) / self.config.n_embeddings_top, on_epoch=True, on_step=False)
 
         return total_loss, x_recon
 
@@ -729,6 +732,11 @@ class VQVAE2Lightning(pl.LightningModule):
     def test_step(self, batch: Any, batch_idx: int) -> Tensor:
         total_loss, _ = self._step(batch, "test")
         return total_loss
+
+    def on_validation_epoch_end(self):
+        """Clear CUDA cache after validation to free memory."""
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     @torch.no_grad()
     def sample(
