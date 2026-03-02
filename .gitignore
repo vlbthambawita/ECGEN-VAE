@@ -1,5 +1,13 @@
 runs/
 generated_samples/
+wandb/
+logs/
+vqvae2/codes/
+vqvae2/logs/
+vqvae2/wandb/
+vqvae2/generated_samples/
+vqvae2/runs/
+plots/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
