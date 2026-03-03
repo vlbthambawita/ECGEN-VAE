@@ -2,13 +2,14 @@
 # Shell script to train Conditional Transformer Priors for VQ-VAE-2 ECG generation
 #
 # Usage:
-#   ./run_train_prior_cond.sh [extract|fit_top|fit_bot|sample]
+#   ./run_train_prior_cond.sh [extract|fit_top|fit_bot|sample|test_sample]
 #
 # Examples:
 #   ./run_train_prior_cond.sh extract
 #   ./run_train_prior_cond.sh fit_top
 #   ./run_train_prior_cond.sh fit_bot
 #   ./run_train_prior_cond.sh sample
+#   ./run_train_prior_cond.sh test_sample
 
 set -euo pipefail
 
@@ -54,6 +55,11 @@ TOP_P="${TOP_P:-0.95}"
 OUTPUT_FILE="${OUTPUT_FILE:-cond_generated_ecgs.npy}"
 PLOT="${PLOT:-true}"
 COND_DIM="${COND_DIM:-128}"
+
+N_TEST="${N_TEST:-4}"
+K_PER_FEATURE="${K_PER_FEATURE:-4}"
+TEST_OUT_DIR="${TEST_OUT_DIR:-test_comparisons}"
+TEST_SEED="${TEST_SEED:-42}"
 
 RR_INTERVAL="${RR_INTERVAL:-0.0}"
 P_ONSET="${P_ONSET:-0.0}"
@@ -116,6 +122,13 @@ train_bottom_prior() {
     print_info "Executing: $CMD"; echo ""; eval $CMD
 }
 
+test_sample_ecgs() {
+    print_header "Test Sample: Real vs Generated ECG Comparison"
+    validate_data_dir; validate_vqvae_ckpt; validate_prior_ckpts
+    CMD="python cond_transformer_prior.py test_sample --data-dir \"$DATA_DIR\" --vqvae-ckpt \"$VQVAE_CKPT\" --top-prior-ckpt \"$TOP_PRIOR_CKPT\" --bot-prior-ckpt \"$BOT_PRIOR_CKPT\" --n-test $N_TEST --k-per-feature $K_PER_FEATURE --out-dir \"$TEST_OUT_DIR\" --cond-dim $COND_DIM --top-temp $TOP_TEMP --bot-temp $BOT_TEMP --top-p $TOP_P --seed $TEST_SEED"
+    print_info "Executing: $CMD"; echo ""; eval $CMD
+}
+
 sample_ecgs() {
     print_header "Generating Conditional ECG Samples"
     validate_vqvae_ckpt; validate_prior_ckpts
@@ -133,16 +146,18 @@ case "$COMMAND" in
     fit_top|train_top) train_top_prior ;;
     fit_bot|train_bot) train_bottom_prior ;;
     sample|generate) sample_ecgs ;;
+    test_sample|test) test_sample_ecgs ;;
     *)
         print_error "Unknown command: $COMMAND"
         echo ""
-        echo "Usage: $0 [extract|fit_top|fit_bot|sample]"
+        echo "Usage: $0 [extract|fit_top|fit_bot|sample|test_sample]"
         echo ""
         echo "Commands:"
         echo "  extract                       Extract codes + features from Cond-VQVAE2"
         echo "  fit_top                       Train conditional top prior transformer"
         echo "  fit_bot                       Train conditional bottom prior transformer"
         echo "  sample                        Generate ECG samples (uses RR_INTERVAL, P_ONSET, etc.)"
+        echo "  test_sample                   Load N test ECGs, generate K per feature set, compare visually"
         echo ""
         echo "Environment Variables:"
         echo "  DATA_DIR, VQVAE_CKPT, CODES_DIR"
@@ -150,12 +165,14 @@ case "$COMMAND" in
         echo "  BOT_BATCH_SIZE, BOT_MAX_EPOCHS, BOT_LR, BOT_COND_DIM"
         echo "  GPUS, WANDB_ENABLED, WANDB_PROJECT"
         echo "  N_SAMPLES, OUTPUT_FILE, PLOT, COND_DIM (must match prior training; default 128)"
+        echo "  N_TEST, K_PER_FEATURE, TEST_OUT_DIR, TEST_SEED (for test_sample)"
         echo "  RR_INTERVAL, P_ONSET, P_END, QRS_ONSET, QRS_END, T_END, P_AXIS, QRS_AXIS, T_AXIS"
         echo ""
         echo "Examples:"
         echo "  $0 extract"
         echo "  $0 fit_top"
         echo "  N_SAMPLES=16 RR_INTERVAL=0.34 PLOT=true $0 sample"
+        echo "  N_TEST=4 K_PER_FEATURE=4 $0 test_sample"
         exit 1
         ;;
 esac

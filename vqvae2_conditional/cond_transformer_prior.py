@@ -779,6 +779,160 @@ def _plot_generated(ecgs: np.ndarray, out_path: str, features_raw: np.ndarray):
     print(f"Saved visualization → {png_path}")
 
 
+@torch.no_grad()
+def _generate_k_ecgs(
+    vqvae,
+    top_prior,
+    bot_prior,
+    top_cond_mlp,
+    bot_cond_mlp,
+    features_raw: np.ndarray,
+    k: int,
+    hp: CondPriorHParams,
+    device: torch.device,
+) -> np.ndarray:
+    """Generate K ECGs conditioned on features_raw. Returns (K, 12, 5000)."""
+    feat_tensor = torch.from_numpy(features_raw.astype(np.float32)).to(device)
+    feat_batch  = feat_tensor.unsqueeze(0).expand(k, -1)
+    top_cond_token = top_cond_mlp(feat_batch)
+    bot_cond_token = bot_cond_mlp(feat_batch)
+    codes_top = top_prior.sample(top_cond_token, hp.top_seq_len, hp, device)
+    codes_bot = bot_prior.sample(codes_top, bot_cond_token, hp.bot_seq_len, hp, device)
+    ecgs = vqvae.decode_codes(codes_bot, codes_top, feat_batch).cpu().numpy()
+    return ecgs
+
+
+def _plot_comparison(
+    ecg_real: np.ndarray,
+    ecgs_gen: np.ndarray,
+    features_raw: np.ndarray,
+    out_path: str,
+):
+    """Plot real vs generated: 1 real row + K generated rows x 6 leads."""
+    FEATURE_NAMES = [
+        "RR Interval", "P Onset",  "P End",
+        "QRS Onset",   "QRS End",  "T End",
+        "P Axis",      "QRS Axis", "T Axis",
+    ]
+    n_leads = min(6, ecg_real.shape[0])
+    n_rows  = 1 + ecgs_gen.shape[0]
+
+    fig, axs = plt.subplots(n_rows, n_leads, figsize=(3 * n_leads, 2 * n_rows), sharex=True)
+    if n_rows == 1:
+        axs = axs.reshape(1, -1)
+
+    colors = plt.cm.tab10.colors
+    # Row 0: Real
+    for li in range(n_leads):
+        ax = axs[0, li]
+        ax.plot(ecg_real[li], linewidth=0.6, color="C0")
+        if li == 0:
+            ax.set_ylabel("Real", fontsize=8, rotation=0, labelpad=30)
+        if li == 0:
+            ax.set_title(f"Lead {li}", fontsize=8)
+        ax.set_xticks([])
+        ax.set_yticks([])
+    # Rows 1..K: Generated
+    for si in range(ecgs_gen.shape[0]):
+        for li in range(n_leads):
+            ax = axs[si + 1, li]
+            ax.plot(ecgs_gen[si, li], linewidth=0.6, color=colors[(si + 1) % len(colors)])
+            if li == 0:
+                ax.set_ylabel(f"Gen {si+1}", fontsize=8, rotation=0, labelpad=30)
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+    cond_lines = "  |  ".join(f"{n}: {v:+.4f}" for n, v in zip(FEATURE_NAMES[:5], features_raw[:5]))
+    cond_lines += "\n" + "  |  ".join(f"{n}: {v:+.4f}" for n, v in zip(FEATURE_NAMES[5:], features_raw[5:]))
+    plt.suptitle(f"Real vs Generated ECG\n{cond_lines}", fontsize=9)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=130, bbox_inches='tight')
+    plt.close()
+    print(f"Saved comparison → {out_path}")
+
+
+@torch.no_grad()
+def test_sample_from_data(
+    data_dir: str,
+    vqvae_ckpt: str,
+    top_prior_ckpt: str,
+    bot_prior_ckpt: str,
+    n_test: int = 4,
+    k_per_feature: int = 4,
+    out_dir: str = "test_comparisons",
+    hp: CondPriorHParams = PHP,
+    seed: int = 42,
+    val_split: float = 0.1,
+    test_split: float = 0.1,
+    skip_missing_check: bool = False,
+):
+    """
+    Load N test ECGs, extract features, generate K samples per feature set,
+    and save comparison plots (real vs generated).
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    # ---- Load models ----
+    print(f"Loading Cond-VQVAE2         : {vqvae_ckpt}")
+    vqvae_pl = CondVQVAE2Lightning.load_from_checkpoint(vqvae_ckpt, map_location=device)
+    vqvae_pl.eval()
+    vqvae = vqvae_pl.model.to(device)
+
+    print(f"Loading CondTopPrior        : {top_prior_ckpt}")
+    top_pl = CondTopPriorLightning.load_from_checkpoint(top_prior_ckpt, hp=hp, map_location=device)
+    top_pl.eval()
+    top_cond_mlp = top_pl.cond_mlp.to(device)
+    top_prior    = top_pl.model.to(device)
+
+    print(f"Loading CondBottomPrior     : {bot_prior_ckpt}")
+    bot_pl = CondBottomPriorLightning.load_from_checkpoint(bot_prior_ckpt, hp=hp, map_location=device)
+    bot_pl.eval()
+    bot_cond_mlp = bot_pl.cond_mlp.to(device)
+    bot_prior    = bot_pl.model.to(device)
+
+    # ---- Load test dataset ----
+    dataset = MIMICIVECGDataset(
+        mimic_path=data_dir,
+        split="test",
+        val_split=val_split,
+        test_split=test_split,
+        max_samples=None,
+        seed=seed,
+        skip_missing_check=skip_missing_check,
+    )
+    n_test = min(n_test, len(dataset))
+    print(f"Loaded {len(dataset)} test samples, using first {n_test}")
+
+    all_real = []
+    all_gen  = []
+
+    for i in range(n_test):
+        ecg_real, features = dataset[i]
+        ecg_real_np = ecg_real.numpy()
+        features_np = features.numpy().astype(np.float32)
+
+        print(f"  Test {i+1}/{n_test}: generating {k_per_feature} samples...")
+        ecgs_gen = _generate_k_ecgs(
+            vqvae, top_prior, bot_prior,
+            top_cond_mlp, bot_cond_mlp,
+            features_np, k_per_feature, hp, device,
+        )
+
+        all_real.append(ecg_real_np)
+        all_gen.append(ecgs_gen)
+
+        png_path = out_path / f"test_comparison_{i:03d}.png"
+        _plot_comparison(ecg_real_np, ecgs_gen, features_np, str(png_path))
+
+    all_real_np = np.stack(all_real, axis=0)
+    all_gen_np  = np.stack(all_gen,  axis=0)
+    np.save(out_path / "real_ecgs.npy",      all_real_np)
+    np.save(out_path / "generated_ecgs.npy", all_gen_np)
+    print(f"Saved real_ecgs.npy {all_real_np.shape}, generated_ecgs.npy {all_gen_np.shape} → {out_path}")
+
+
 # ============================================================================
 # Trainer factory
 # ============================================================================
@@ -889,6 +1043,24 @@ def main():
     sp.add_argument("--qrs-axis",    type=float, required=True, metavar="NORM_VAL")
     sp.add_argument("--t-axis",      type=float, required=True, metavar="NORM_VAL")
 
+    # ------------------------------------------------------------------ test_sample
+    tsp = sub.add_parser("test_sample", help="Test: load N test ECGs, generate K per feature set, compare visually")
+    tsp.add_argument("--data-dir",        required=True)
+    tsp.add_argument("--vqvae-ckpt",      required=True)
+    tsp.add_argument("--top-prior-ckpt",  required=True)
+    tsp.add_argument("--bot-prior-ckpt",  required=True)
+    tsp.add_argument("--n-test",       type=int, default=4, help="Number of test samples")
+    tsp.add_argument("--k-per-feature", type=int, default=4, help="Generated samples per feature set")
+    tsp.add_argument("--out-dir",      type=str, default="test_comparisons")
+    tsp.add_argument("--cond-dim",     type=int, default=128)
+    tsp.add_argument("--top-temp",     type=float, default=PHP.top_temperature)
+    tsp.add_argument("--bot-temp",     type=float, default=PHP.bot_temperature)
+    tsp.add_argument("--top-p",        type=float, default=PHP.top_top_p)
+    tsp.add_argument("--seed",         type=int, default=42)
+    tsp.add_argument("--val-split",    type=float, default=0.1)
+    tsp.add_argument("--test-split",   type=float, default=0.1)
+    tsp.add_argument("--skip-missing-check", action="store_true")
+
     args = parser.parse_args()
     if args.command is None:
         parser.print_help()
@@ -960,6 +1132,29 @@ def main():
             out_path=args.out,
             hp=hp,
             plot=args.plot,
+        )
+
+    elif args.command == "test_sample":
+        hp = CondPriorHParams()
+        hp.cond_dim        = args.cond_dim
+        hp.top_temperature = args.top_temp
+        hp.bot_temperature = args.bot_temp
+        hp.top_top_p       = args.top_p
+        hp.bot_top_p       = args.top_p
+
+        test_sample_from_data(
+            data_dir=args.data_dir,
+            vqvae_ckpt=args.vqvae_ckpt,
+            top_prior_ckpt=args.top_prior_ckpt,
+            bot_prior_ckpt=args.bot_prior_ckpt,
+            n_test=args.n_test,
+            k_per_feature=args.k_per_feature,
+            out_dir=args.out_dir,
+            hp=hp,
+            seed=args.seed,
+            val_split=args.val_split,
+            test_split=args.test_split,
+            skip_missing_check=args.skip_missing_check,
         )
 
 
