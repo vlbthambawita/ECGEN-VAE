@@ -1,0 +1,23 @@
+n_leads: 12
+signal_len: 5000
+hidden_channels: 128
+residual_channels: 64
+n_res_blocks: 4
+n_embeddings_top: 512
+n_embeddings_bot: 512
+embedding_dim: 64
+commitment_cost: 0.25
+ema_decay: 0.99
+enc_bot_strides:
+- 2
+- 2
+- 2
+enc_top_strides:
+- 2
+- 2
+- 2
+n_features: 9
+cond_dim: 128
+lr: 0.0003
+b1: 0.9
+b2: 0.999
