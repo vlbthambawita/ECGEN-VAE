@@ -22,7 +22,7 @@ DATA_DIR="${DATA_DIR:-/work/vajira/DATA/SEARCH/MIMIC_IV_ECG_raw_v1/mimic-iv-ecg-
 VQVAE_CKPT="${VQVAE_CKPT:-runs/cond_vqvae2_mimic/seed_42/checkpoints/last.ckpt}"
 CODES_DIR="${CODES_DIR:-codes/cond_vqvae2_mimic}"
 EXTRACT_BATCH_SIZE="${EXTRACT_BATCH_SIZE:-32}"
-MAX_SAMPLES="${MAX_SAMPLES:-1000}"
+MAX_SAMPLES="${MAX_SAMPLES:-null}"
 
 TOP_BATCH_SIZE="${TOP_BATCH_SIZE:-16}"
 TOP_MAX_EPOCHS="${TOP_MAX_EPOCHS:-100}"
