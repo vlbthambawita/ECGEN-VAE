@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Combined script to train Conditional VQ-VAE-2 and Transformer Priors in one run
+#
+# Pipeline: Train VQ-VAE-2 -> Extract Codes -> Train Top Prior -> Train Bottom Prior
+# No sampling at the end.
+#
+# Usage:
+#   ./run_train_all_cond.sh
+#
+# Override via environment:
+#   EXP_NAME, SEED, RUNS_ROOT, DATA_DIR, MAX_SAMPLES
+#   GPUS (sets both DEVICES and GPUS for sub-scripts)
+#   MAX_EPOCHS, TOP_MAX_EPOCHS, BOT_MAX_EPOCHS, etc.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+export PYTHONPATH="${SCRIPT_DIR}/../vqvae2:${PYTHONPATH:-}"
+
+# -----------------------------------------------------------------------------
+# Shared configuration
+# -----------------------------------------------------------------------------
+DATA_DIR="${DATA_DIR:-/work/vajira/DATA/SEARCH/MIMIC_IV_ECG_raw_v1/mimic-iv-ecg-diagnostic-electrocardiogram-matched-subset-1.0}"
+EXP_NAME="${EXP_NAME:-cond_vqvae2_mimic}"
+SEED="${SEED:-42}"
+RUNS_ROOT="${RUNS_ROOT:-runs}"
+MAX_SAMPLES="${MAX_SAMPLES:-1000}"
+
+# GPU: prior script uses GPUS, vqvae2 uses DEVICES
+GPUS="${GPUS:-0}"
+export DEVICES="${DEVICES:-$GPUS}"
+export GPUS="$GPUS"
+
+# Export for sub-scripts
+export DATA_DIR EXP_NAME SEED RUNS_ROOT MAX_SAMPLES
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+print_header() {
+    echo ""
+    echo "=========================================="
+    echo "$1"
+    echo "=========================================="
+    echo ""
+}
+print_info() { echo "[INFO] $1"; }
+print_error() { echo "[ERROR] $1" >&2; }
+
+# -----------------------------------------------------------------------------
+# Pre-flight
+# -----------------------------------------------------------------------------
+[ -f "vqvae2_conditional.py" ] || { print_error "vqvae2_conditional.py not found"; exit 1; }
+[ -f "cond_transformer_prior.py" ] || { print_error "cond_transformer_prior.py not found"; exit 1; }
+
+# -----------------------------------------------------------------------------
+# Main pipeline
+# -----------------------------------------------------------------------------
+print_header "Combined Training: VQ-VAE-2 + Transformer Priors"
+
+# Step 1: Train Conditional VQ-VAE-2
+print_header "Step 1/4: Training Conditional VQ-VAE-2"
+./run_train_vqvae2_cond.sh fit
+
+# Step 2-4: Prior pipeline (extract -> fit_top -> fit_bot)
+export VQVAE_CKPT="${RUNS_ROOT}/${EXP_NAME}/seed_${SEED}/checkpoints/last.ckpt"
+export CODES_DIR="codes/${EXP_NAME}"
+
+if [ ! -f "$VQVAE_CKPT" ]; then
+    print_error "VQ-VAE checkpoint not found: $VQVAE_CKPT"
+    exit 1
+fi
+
+print_header "Step 2/4: Extracting Codes"
+./run_train_prior_cond.sh extract
+
+print_header "Step 3/4: Training Conditional Top Prior"
+./run_train_prior_cond.sh fit_top
+
+print_header "Step 4/4: Training Conditional Bottom Prior"
+./run_train_prior_cond.sh fit_bot
+
+print_header "Done! Both models trained."
