@@ -27,9 +27,9 @@ SEED="${SEED:-42}"
 RUNS_ROOT="${RUNS_ROOT:-runs}"
 
 # Data settings
-BATCH_SIZE="${BATCH_SIZE:-32}"
+BATCH_SIZE="${BATCH_SIZE:-64}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
-MAX_SAMPLES="${MAX_SAMPLES:-}"  # Set to null for full dataset
+MAX_SAMPLES="${MAX_SAMPLES:-null}"  # Set to null for full dataset
 VAL_SPLIT="${VAL_SPLIT:-0.1}"
 TEST_SPLIT="${TEST_SPLIT:-0.1}"
 
