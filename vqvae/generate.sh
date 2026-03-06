@@ -4,7 +4,7 @@
 set -euo pipefail
 
 # Default settings
-PRIOR_CHECKPOINT="${PRIOR_CHECKPOINT:-/work/vajira/DL2026/ECGEN-VAE/runs/prior_mimic_standalone/seed_42/checkpoints/last.ckpt}"
+PRIOR_CHECKPOINT="${PRIOR_CHECKPOINT:-}"
 N_SAMPLES="${N_SAMPLES:-16}"
 TEMPERATURE="${TEMPERATURE:-1.0}"
 OUTPUT_DIR="${OUTPUT_DIR:-generated_samples}"

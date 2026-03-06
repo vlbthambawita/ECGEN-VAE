@@ -46,7 +46,7 @@ Generate samples with multiple temperatures to find the best balance:
 
 ```bash
 python generate_samples.py \
-    --prior-checkpoint runs/prior_mimic_standalone/seed_42/checkpoints/best.ckpt \
+    --prior-checkpoint runs/prior_mimic_standalone/seed_42/checkpoints/epoch098-step486981.ckpt \
     --n-samples 16 \
     --temperatures 0.5 0.8 1.0 1.2 1.5
 ```
