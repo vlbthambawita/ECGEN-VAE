@@ -25,6 +25,7 @@ import os
 import random
 import sys
 from dataclasses import dataclass
+import shutil
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
@@ -924,6 +925,66 @@ class VAEVisualizationCallback(Callback):
         plt.close()
 
 
+class BestCheckpointCopyCallback(Callback):
+    """Keep an up-to-date copy of the best checkpoint as best.ckpt."""
+
+    def __init__(self, checkpoints_dir: Path, filename: str = "best.ckpt") -> None:
+        super().__init__()
+        self.checkpoints_dir = Path(checkpoints_dir)
+        self.filename = filename
+
+    def on_validation_epoch_end(self, trainer, pl_module) -> None:
+        # Find the primary ModelCheckpoint callback
+        checkpoint_cb = None
+        for cb in trainer.callbacks:
+            if isinstance(cb, ModelCheckpoint):
+                checkpoint_cb = cb
+                break
+
+        if checkpoint_cb is None:
+            return
+
+        best_path = checkpoint_cb.best_model_path
+        if not best_path:
+            return
+
+        dest_path = self.checkpoints_dir / self.filename
+        # Avoid copying checkpoint onto itself
+        if os.path.abspath(best_path) == os.path.abspath(dest_path):
+            return
+
+        try:
+            shutil.copy2(best_path, dest_path)
+        except Exception as e:
+            # Non-fatal: just report and continue training
+            print(f"Warning: failed to copy best checkpoint to {dest_path}: {e}")
+
+
+class PeriodicCheckpointCallback(Callback):
+    """Save additional checkpoints every N epochs using trainer.save_checkpoint."""
+
+    def __init__(self, dirpath: Path, every_n_epochs: int) -> None:
+        super().__init__()
+        self.dirpath = Path(dirpath)
+        self.every_n_epochs = every_n_epochs
+        self.dirpath.mkdir(parents=True, exist_ok=True)
+
+    def on_train_epoch_end(self, trainer, pl_module) -> None:
+        if self.every_n_epochs is None or self.every_n_epochs <= 0:
+            return
+
+        epoch_idx = trainer.current_epoch + 1  # epochs are 0-indexed internally
+        if epoch_idx % self.every_n_epochs != 0:
+            return
+
+        filename = f"epoch_{epoch_idx:03d}.ckpt"
+        ckpt_path = self.dirpath / filename
+        try:
+            trainer.save_checkpoint(str(ckpt_path))
+        except Exception as e:
+            print(f"Warning: failed to save periodic checkpoint at {ckpt_path}: {e}")
+
+
 # ============================================================================
 # Training Functions
 # ============================================================================
@@ -1052,8 +1113,18 @@ def train_stage1_vqvae(args):
         log_every_n_epochs=args.viz_every_n_epochs,
         num_samples=args.viz_num_samples,
     )
+    best_copy_callback = BestCheckpointCopyCallback(
+        checkpoints_dir=checkpoints_dir,
+        filename="best.ckpt",
+    )
+    periodic_ckpt_callback = PeriodicCheckpointCallback(
+        dirpath=checkpoints_dir,
+        every_n_epochs=args.checkpoint_every_n_epochs,
+    )
 
-    callbacks = [checkpoint_callback, early_stop_callback, lr_monitor, viz_callback]
+    callbacks = [checkpoint_callback, early_stop_callback, lr_monitor, viz_callback, best_copy_callback]
+    if args.checkpoint_every_n_epochs and args.checkpoint_every_n_epochs > 0:
+        callbacks.append(periodic_ckpt_callback)
 
     trainer = pl.Trainer(
         default_root_dir=str(run_dir),
@@ -1078,6 +1149,7 @@ def train_stage1_vqvae(args):
     print("=" * 80)
     print("VQ-VAE training (Stage 1) finished.")
     print(f"Best checkpoint: {checkpoint_callback.best_model_path}")
+    print(f"Best checkpoint (copy): {checkpoints_dir / 'best.ckpt'}")
     print(f"Best validation loss: {checkpoint_callback.best_model_score:.4f}")
     print()
     print("Next step: Train the prior model (Stage 2) using:")
@@ -1205,7 +1277,18 @@ def train_stage2_prior(args):
 
     lr_monitor = LearningRateMonitor(logging_interval="step")
 
-    callbacks = [checkpoint_callback, early_stop_callback, lr_monitor]
+    best_copy_callback = BestCheckpointCopyCallback(
+        checkpoints_dir=checkpoints_dir,
+        filename="best.ckpt",
+    )
+    periodic_ckpt_callback = PeriodicCheckpointCallback(
+        dirpath=checkpoints_dir,
+        every_n_epochs=args.checkpoint_every_n_epochs,
+    )
+
+    callbacks = [checkpoint_callback, early_stop_callback, lr_monitor, best_copy_callback]
+    if args.checkpoint_every_n_epochs and args.checkpoint_every_n_epochs > 0:
+        callbacks.append(periodic_ckpt_callback)
 
     trainer = pl.Trainer(
         default_root_dir=str(run_dir),
@@ -1232,6 +1315,7 @@ def train_stage2_prior(args):
     print("=" * 80)
     print("Prior training (Stage 2) finished.")
     print(f"Best checkpoint: {checkpoint_callback.best_model_path}")
+    print(f"Best checkpoint (copy): {checkpoints_dir / 'best.ckpt'}")
     print(f"Best validation loss: {checkpoint_callback.best_model_score:.4f}")
     print()
     print("You can now generate ECG samples using the trained prior model!")
@@ -1289,6 +1373,12 @@ def parse_args():
     parser.add_argument("--gradient-clip", type=float, default=1.0, help="Gradient clipping value")
     parser.add_argument("--patience", type=int, default=10, help="Early stopping patience")
     parser.add_argument("--save-top-k", type=int, default=3, help="Save top k checkpoints")
+    parser.add_argument(
+        "--checkpoint-every-n-epochs",
+        type=int,
+        default=0,
+        help="Save additional checkpoints every N epochs (0 disables periodic checkpoints)",
+    )
 
     # Visualization (Stage 1 only)
     parser.add_argument("--viz-every-n-epochs", type=int, default=5, help="Generate visualizations every N epochs")

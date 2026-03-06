@@ -62,6 +62,7 @@ CHECK_VAL_EVERY_N_EPOCH="${CHECK_VAL_EVERY_N_EPOCH:-1}"
 GRADIENT_CLIP="${GRADIENT_CLIP:-1.0}"
 PATIENCE="${PATIENCE:-10}"
 SAVE_TOP_K="${SAVE_TOP_K:-3}"
+CHECKPOINT_EVERY_N_EPOCHS="${CHECKPOINT_EVERY_N_EPOCHS:-0}"  # 0 disables periodic checkpoints
 
 # Visualization settings (Stage 1)
 VIZ_EVERY_N_EPOCHS="${VIZ_EVERY_N_EPOCHS:-5}"
@@ -219,6 +220,7 @@ if [[ "${STAGE}" == "1" || "${STAGE}" == "both" ]]; then
         --gradient-clip ${GRADIENT_CLIP} \
         --patience ${PATIENCE} \
         --save-top-k ${SAVE_TOP_K} \
+        --checkpoint-every-n-epochs ${CHECKPOINT_EVERY_N_EPOCHS} \
         --viz-every-n-epochs ${VIZ_EVERY_N_EPOCHS} \
         --viz-num-samples ${VIZ_NUM_SAMPLES}"
     
@@ -260,10 +262,13 @@ if [[ "${STAGE}" == "1" || "${STAGE}" == "both" ]]; then
     
     # Find best checkpoint
     CHECKPOINT_DIR="${RUNS_ROOT}/${EXP_NAME_STAGE1}/seed_${SEED}/checkpoints"
-    BEST_CHECKPOINT=$(find "${CHECKPOINT_DIR}" -name "epoch*.ckpt" -type f | sort | tail -n 1)
-    
-    if [ -z "${BEST_CHECKPOINT}" ]; then
-        BEST_CHECKPOINT="${CHECKPOINT_DIR}/last.ckpt"
+    if [ -f "${CHECKPOINT_DIR}/best.ckpt" ]; then
+        BEST_CHECKPOINT="${CHECKPOINT_DIR}/best.ckpt"
+    else
+        BEST_CHECKPOINT=$(find "${CHECKPOINT_DIR}" -name "epoch*.ckpt" -type f | sort | tail -n 1)
+        if [ -z "${BEST_CHECKPOINT}" ]; then
+            BEST_CHECKPOINT="${CHECKPOINT_DIR}/last.ckpt"
+        fi
     fi
     
     print_header "Stage 1 Complete"
@@ -340,6 +345,7 @@ if [[ "${STAGE}" == "2" || "${STAGE}" == "both" ]]; then
         --gradient-clip ${GRADIENT_CLIP} \
         --patience ${PATIENCE} \
         --save-top-k ${SAVE_TOP_K} \
+        --checkpoint-every-n-epochs ${CHECKPOINT_EVERY_N_EPOCHS} \
         --vqvae-checkpoint ${VQVAE_CHECKPOINT}"
     
     # Add wandb if enabled
@@ -380,10 +386,13 @@ if [[ "${STAGE}" == "2" || "${STAGE}" == "both" ]]; then
     
     # Find best checkpoint
     CHECKPOINT_DIR="${RUNS_ROOT}/${EXP_NAME_STAGE2}/seed_${SEED}/checkpoints"
-    BEST_CHECKPOINT=$(find "${CHECKPOINT_DIR}" -name "epoch*.ckpt" -type f | sort | tail -n 1)
-    
-    if [ -z "${BEST_CHECKPOINT}" ]; then
-        BEST_CHECKPOINT="${CHECKPOINT_DIR}/last.ckpt"
+    if [ -f "${CHECKPOINT_DIR}/best.ckpt" ]; then
+        BEST_CHECKPOINT="${CHECKPOINT_DIR}/best.ckpt"
+    else
+        BEST_CHECKPOINT=$(find "${CHECKPOINT_DIR}" -name "epoch*.ckpt" -type f | sort | tail -n 1)
+        if [ -z "${BEST_CHECKPOINT}" ]; then
+            BEST_CHECKPOINT="${CHECKPOINT_DIR}/last.ckpt"
+        fi
     fi
     
     print_header "Stage 2 Complete"
