@@ -5,7 +5,9 @@
 # No sampling at the end.
 #
 # Usage:
-#   ./run_train_all_cond.sh
+#   ./run_train_all_cond_g002.sh           # Run full pipeline (VQ-VAE-2 + priors)
+#   ./run_train_all_cond_g002.sh extract   # Skip VQ-VAE-2, start from extract step
+#   ./run_train_all_cond_g002.sh priors    # Alias for starting from extract step
 #
 # Override via environment:
 #   EXP_NAME, SEED, RUNS_ROOT, DATA_DIR, MAX_SAMPLES
@@ -25,7 +27,8 @@ DATA_DIR="${DATA_DIR:-/work/vajira/data/mimic_iv_original/mimic-iv-ecg-diagnosti
 EXP_NAME="${EXP_NAME:-cond_vqvae2_mimic}"
 SEED="${SEED:-42}"
 RUNS_ROOT="${RUNS_ROOT:-runs}"
-MAX_SAMPLES="${MAX_SAMPLES:-null}"
+# Leave MAX_SAMPLES empty by default so it is only passed when explicitly set.
+MAX_SAMPLES="${MAX_SAMPLES:-}"
 
 # GPU: prior script uses GPUS, vqvae2 uses DEVICES
 GPUS="${GPUS:-0}"
@@ -57,11 +60,17 @@ print_error() { echo "[ERROR] $1" >&2; }
 # -----------------------------------------------------------------------------
 # Main pipeline
 # -----------------------------------------------------------------------------
-print_header "Combined Training: VQ-VAE-2 + Transformer Priors"
+MODE="${1:-all}"  # all | extract | priors
 
-# Step 1: Train Conditional VQ-VAE-2
-print_header "Step 1/4: Training Conditional VQ-VAE-2"
-./run_train_vqvae2_cond.sh fit
+print_header "Combined Training: VQ-VAE-2 + Transformer Priors (mode: $MODE)"
+
+# Step 1: Train Conditional VQ-VAE-2 (optional based on MODE)
+if [ "$MODE" = "all" ]; then
+    print_header "Step 1/4: Training Conditional VQ-VAE-2"
+    ./run_train_vqvae2_cond.sh fit
+else
+    print_info "Skipping Step 1/4 (VQ-VAE-2 training) because MODE='$MODE'"
+fi
 
 # Step 2-4: Prior pipeline (extract -> fit_top -> fit_bot)
 export VQVAE_CKPT="${RUNS_ROOT}/${EXP_NAME}/seed_${SEED}/checkpoints/last.ckpt"

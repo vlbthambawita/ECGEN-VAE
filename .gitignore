@@ -14,7 +14,7 @@ vqvae2_conditional/test_comparisons/
 vqvae2_conditional/wandb/
 vqvae2_conditional/logs/
 vqvae2_conditional/lightning_logs/
-vqvae2_conditional/codes/
+vqvae2_conditional/codes/*
 
 
 # Byte-compiled / optimized / DLL files
@@ -24,6 +24,7 @@ __pycache__/
 
 # C extensions
 *.so
+*.npy
 
 # Distribution / packaging
 .Python
