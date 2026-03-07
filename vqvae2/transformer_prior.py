@@ -697,6 +697,7 @@ def main():
     bp.add_argument("--d-model",    type=int, default=PHP.bot_d_model)
     bp.add_argument("--n-layers",   type=int, default=PHP.bot_n_layers)
     bp.add_argument("--n-heads",    type=int, default=PHP.bot_n_heads)
+    bp.add_argument("--ckpt-path",  type=str, default=None, help="Resume from checkpoint (path to last.ckpt)")
     bp.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging")
     bp.add_argument("--wandb-project", type=str, default="vqvae2-prior", help="W&B project name")
     bp.add_argument("--wandb-entity", type=str, default=None, help="W&B entity (username/team)")
@@ -750,7 +751,8 @@ def main():
         model = BottomPriorLightning(hp)
         dm = CodeDataModule(args.codes_dir, hp)
         trainer = build_trainer(args, "bot_prior")
-        trainer.fit(model, dm)
+        ckpt_path = getattr(args, "ckpt_path", None) or None
+        trainer.fit(model, dm, ckpt_path=ckpt_path)
 
     # ------------------------------------------------------------------
     elif args.command == "sample":

@@ -95,9 +95,14 @@ BOT_LR="${BOT_LR:-0.0003}"
 BOT_D_MODEL="${BOT_D_MODEL:-512}"
 BOT_N_LAYERS="${BOT_N_LAYERS:-12}"
 BOT_N_HEADS="${BOT_N_HEADS:-8}"
+# Resume from checkpoint (optional): set to path of last.ckpt to continue training
+BOT_CKPT_PATH="${BOT_CKPT_PATH:-}"
 
 # Weights & Biases settings for Prior
 WANDB_PROJECT_PRIOR="${WANDB_PROJECT_PRIOR:-vqvae2-prior}"
+
+# Resume/skip: set RESUME_STEP=4 to run only step 4 (useful with BOT_CKPT_PATH)
+RESUME_STEP="${RESUME_STEP:-}"
 
 # ============================================================================
 # Helper Functions
@@ -384,6 +389,11 @@ train_bottom_prior() {
         --n-layers $BOT_N_LAYERS \
         --n-heads $BOT_N_HEADS"
     
+    if [ -n "$BOT_CKPT_PATH" ]; then
+        CMD="$CMD --ckpt-path \"$BOT_CKPT_PATH\""
+        print_info "Resuming from checkpoint: $BOT_CKPT_PATH"
+    fi
+    
     if [ -n "$DEVICES" ]; then
         CMD="$CMD --gpus $DEVICES"
     fi
@@ -433,27 +443,33 @@ print_info "  1. Train VQ-VAE-2"
 print_info "  2. Extract codes"
 print_info "  3. Train top prior"
 print_info "  4. Train bottom prior"
+if [ -n "$RESUME_STEP" ]; then
+    print_info "RESUME_STEP=$RESUME_STEP: skipping stages 1–$((RESUME_STEP - 1))"
+fi
 echo ""
 
-# Stage 1: Train VQ-VAE-2
-train_vqvae2
+if [ -z "$RESUME_STEP" ] || [ "$RESUME_STEP" -le 1 ]; then
+    # Stage 1: Train VQ-VAE-2
+    train_vqvae2
+fi
 
 # Determine VQ-VAE-2 checkpoint path
 VQVAE_CKPT="$RUNS_ROOT/$EXP_NAME/seed_$SEED/checkpoints/last.ckpt"
-print_info "VQ-VAE-2 checkpoint path: $VQVAE_CKPT"
-
-# Validate checkpoint exists
-if [ ! -f "$VQVAE_CKPT" ]; then
-    print_error "Expected checkpoint not found: $VQVAE_CKPT"
-    print_error "Training may have failed or checkpoint saved to different location"
-    exit 1
+if [ -z "$RESUME_STEP" ] || [ "$RESUME_STEP" -le 2 ]; then
+    # Validate checkpoint exists
+    if [ ! -f "$VQVAE_CKPT" ]; then
+        print_error "Expected checkpoint not found: $VQVAE_CKPT"
+        print_error "Training may have failed or checkpoint saved to different location"
+        exit 1
+    fi
+    # Stage 2: Extract codes
+    extract_codes "$VQVAE_CKPT"
 fi
 
-# Stage 2: Extract codes
-extract_codes "$VQVAE_CKPT"
-
-# Stage 3: Train top prior
-train_top_prior
+if [ -z "$RESUME_STEP" ] || [ "$RESUME_STEP" -le 3 ]; then
+    # Stage 3: Train top prior
+    train_top_prior
+fi
 
 # Stage 4: Train bottom prior
 train_bottom_prior

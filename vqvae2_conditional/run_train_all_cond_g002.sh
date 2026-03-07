@@ -8,6 +8,7 @@
 #   ./run_train_all_cond_g002.sh           # Run full pipeline (VQ-VAE-2 + priors)
 #   ./run_train_all_cond_g002.sh extract   # Skip VQ-VAE-2, start from extract step
 #   ./run_train_all_cond_g002.sh priors    # Alias for starting from extract step
+#   ./run_train_all_cond_g002.sh fit_bot   # Resume from step 4 (bottom prior only)
 #
 # Override via environment:
 #   EXP_NAME, SEED, RUNS_ROOT, DATA_DIR, MAX_SAMPLES
@@ -60,9 +61,13 @@ print_error() { echo "[ERROR] $1" >&2; }
 # -----------------------------------------------------------------------------
 # Main pipeline
 # -----------------------------------------------------------------------------
-MODE="${1:-all}"  # all | extract | priors
+MODE="${1:-all}"  # all | extract | priors | fit_bot
 
 print_header "Combined Training: VQ-VAE-2 + Transformer Priors (mode: $MODE)"
+
+# Shared exports for prior pipeline
+export VQVAE_CKPT="${RUNS_ROOT}/${EXP_NAME}/seed_${SEED}/checkpoints/last.ckpt"
+export CODES_DIR="codes/${EXP_NAME}"
 
 # Step 1: Train Conditional VQ-VAE-2 (optional based on MODE)
 if [ "$MODE" = "all" ]; then
@@ -72,20 +77,26 @@ else
     print_info "Skipping Step 1/4 (VQ-VAE-2 training) because MODE='$MODE'"
 fi
 
-# Step 2-4: Prior pipeline (extract -> fit_top -> fit_bot)
-export VQVAE_CKPT="${RUNS_ROOT}/${EXP_NAME}/seed_${SEED}/checkpoints/last.ckpt"
-export CODES_DIR="codes/${EXP_NAME}"
+# Step 2-3: Skip when resuming from step 4
+if [ "$MODE" != "fit_bot" ]; then
+    if [ ! -f "$VQVAE_CKPT" ]; then
+        print_error "VQ-VAE checkpoint not found: $VQVAE_CKPT"
+        exit 1
+    fi
 
-if [ ! -f "$VQVAE_CKPT" ]; then
-    print_error "VQ-VAE checkpoint not found: $VQVAE_CKPT"
-    exit 1
+    print_header "Step 2/4: Extracting Codes"
+    ./run_train_prior_cond.sh extract
+
+    print_header "Step 3/4: Training Conditional Top Prior"
+    ./run_train_prior_cond.sh fit_top
+else
+    # fit_bot mode: validate codes exist
+    if [ ! -d "$CODES_DIR" ] || [ ! -f "$CODES_DIR/codes_top.npy" ] || [ ! -f "$CODES_DIR/codes_bot.npy" ] || [ ! -f "$CODES_DIR/features.npy" ]; then
+        print_error "Codes directory missing or incomplete: $CODES_DIR (need codes_top.npy, codes_bot.npy, features.npy)"
+        exit 1
+    fi
+    print_info "Resuming from step 4 (fit_bot); skipping steps 1-3"
 fi
-
-print_header "Step 2/4: Extracting Codes"
-./run_train_prior_cond.sh extract
-
-print_header "Step 3/4: Training Conditional Top Prior"
-./run_train_prior_cond.sh fit_top
 
 print_header "Step 4/4: Training Conditional Bottom Prior"
 ./run_train_prior_cond.sh fit_bot

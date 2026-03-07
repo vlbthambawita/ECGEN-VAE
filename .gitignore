@@ -17,6 +17,7 @@ vqvae2_conditional/lightning_logs/
 vqvae2_conditional/codes/*
 
 vqvae/diagnostics/
+vqvae/prior_diagnostics/
 
 
 # Byte-compiled / optimized / DLL files
