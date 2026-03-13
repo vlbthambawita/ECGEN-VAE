@@ -1,0 +1,33 @@
+{
+  "checkpoint": "/work/vajira/DL2026/ECGEN-VAE/vqvae/runs/prior_mimic_standalone/seed_42/checkpoints/epoch098-step486981.ckpt",
+  "num_embeddings": 512,
+  "mean_nll": NaN,
+  "median_nll": NaN,
+  "real_token_entropy": 7.961834887139611,
+  "real_used_codes": 350,
+  "real_repetition_rate": 0.02216045673076923,
+  "generated": {
+    "0.5": {
+      "entropy": 6.134162973424089,
+      "repetition_rate": 0.05667202572347267,
+      "unique_tokens": 233
+    },
+    "0.8": {
+      "entropy": 7.796855603008124,
+      "repetition_rate": 0.017282958199356914,
+      "unique_tokens": 308
+    },
+    "1.0": {
+      "entropy": 7.945857640415117,
+      "repetition_rate": 0.013263665594855305,
+      "unique_tokens": 306
+    },
+    "1.2": {
+      "entropy": 8.096406060756017,
+      "repetition_rate": 0.01004823151125402,
+      "unique_tokens": 318
+    }
+  },
+  "issues_found": 0,
+  "n_batches_evaluated": 20
+}
