@@ -18,7 +18,7 @@ cd "$SCRIPT_DIR"
 export PYTHONPATH="${SCRIPT_DIR}/../vqvae2:${PYTHONPATH:-}"
 
 # Configuration
-DATA_DIR="${DATA_DIR:-/work/vajira/DATA/SEARCH/MIMIC_IV_ECG_raw_v1/mimic-iv-ecg-diagnostic-electrocardiogram-matched-subset-1.0}"
+DATA_DIR="${DATA_DIR:-/work/vajira/data/mimic_iv_original/mimic-iv-ecg-diagnostic-electrocardiogram-matched-subset-1.0}"
 VQVAE_CKPT="${VQVAE_CKPT:-runs/cond_vqvae2_mimic/seed_42/checkpoints/last.ckpt}"
 CODES_DIR="${CODES_DIR:-codes/cond_vqvae2_mimic}"
 EXTRACT_BATCH_SIZE="${EXTRACT_BATCH_SIZE:-32}"
@@ -48,7 +48,7 @@ WANDB_ENTITY="${WANDB_ENTITY:-}"
 WANDB_RUN_NAME="${WANDB_RUN_NAME:-}"
 
 TOP_PRIOR_CKPT="${TOP_PRIOR_CKPT:-logs/cond_top_prior/version_0/checkpoints/last.ckpt}"
-BOT_PRIOR_CKPT="${BOT_PRIOR_CKPT:-logs/cond_bot_prior/version_0/checkpoints/last.ckpt}"
+BOT_PRIOR_CKPT="${BOT_PRIOR_CKPT:-logs/cond_bot_prior/version_1/checkpoints/last.ckpt}"
 N_SAMPLES="${N_SAMPLES:-8}"
 TOP_TEMP="${TOP_TEMP:-1.0}"
 BOT_TEMP="${BOT_TEMP:-1.0}"

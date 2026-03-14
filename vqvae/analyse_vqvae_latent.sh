@@ -49,12 +49,12 @@ SEED="${SEED:-42}"
 RUNS_ROOT="${RUNS_ROOT:-runs}"
 
 # Checkpoint — leave empty to auto-locate, or set via VQVAE_CHECKPOINT or CLI arg
-VQVAE_CHECKPOINT="${VQVAE_CHECKPOINT:-/work/vajira/DL2026/ECGEN-VAE/runs/vqvae_ptbxl_hyp_finetune_20260314_165552/seed_42/checkpoints/last.ckpt}"
+VQVAE_CHECKPOINT="${VQVAE_CHECKPOINT:-/work/vajira/DL2026/ECGEN-VAE/runs/vqvae_ptbxl_hyp_finetune_20260314_173146/seed_42/checkpoints/last.ckpt}"
 [ -n "${1:-}" ] && VQVAE_CHECKPOINT="${1}"
 
 # Analysis settings
 MAX_SAMPLES="${MAX_SAMPLES:-2000}"           # test samples to analyse; empty = all
-OUTPUT_DIR="${OUTPUT_DIR:-latent_analysis_deepfake_with_hyp_finetuned}"  # output directory for figures and stats.json
+OUTPUT_DIR="${OUTPUT_DIR:-latent_analysis_deepfake_with_hyp_finetuned_v2}"  # output directory for figures and stats.json
 BATCH_SIZE="${BATCH_SIZE:-64}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
 SEQ_LENGTH="${SEQ_LENGTH:-5000}"             # must match training
