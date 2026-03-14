@@ -10,6 +10,9 @@
 #   ./run_train_all_cond_g002.sh priors    # Alias for starting from extract step
 #   ./run_train_all_cond_g002.sh fit_bot   # Resume from step 4 (bottom prior only)
 #
+# Resume bottom prior from last checkpoint:
+#   BOT_PRIOR_RESUME_CKPT=logs/cond_bot_prior/version_0/checkpoints/last.ckpt ./run_train_all_cond_g002.sh fit_bot
+#
 # Override via environment:
 #   EXP_NAME, SEED, RUNS_ROOT, DATA_DIR, MAX_SAMPLES
 #   GPUS (sets both DEVICES and GPUS for sub-scripts)

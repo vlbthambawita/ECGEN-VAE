@@ -49,6 +49,8 @@ WANDB_RUN_NAME="${WANDB_RUN_NAME:-}"
 
 TOP_PRIOR_CKPT="${TOP_PRIOR_CKPT:-logs/cond_top_prior/version_0/checkpoints/last.ckpt}"
 BOT_PRIOR_CKPT="${BOT_PRIOR_CKPT:-logs/cond_bot_prior/version_1/checkpoints/last.ckpt}"
+# Resume bottom prior from checkpoint when set (e.g. logs/cond_bot_prior/version_0/checkpoints/last.ckpt)
+BOT_PRIOR_RESUME_CKPT="${BOT_PRIOR_RESUME_CKPT:-}"
 N_SAMPLES="${N_SAMPLES:-8}"
 TOP_TEMP="${TOP_TEMP:-1.0}"
 BOT_TEMP="${BOT_TEMP:-1.0}"
@@ -117,6 +119,7 @@ train_bottom_prior() {
     validate_codes_dir
     CMD="python cond_transformer_prior.py fit_bot --codes-dir \"$CODES_DIR\" --batch-size $BOT_BATCH_SIZE --max-epochs $BOT_MAX_EPOCHS --lr $BOT_LR --d-model $BOT_D_MODEL --n-layers $BOT_N_LAYERS --n-heads $BOT_N_HEADS --cond-dim $BOT_COND_DIM"
     [ -n "$GPUS" ] && CMD="$CMD --gpus $GPUS"
+    [ -n "$BOT_PRIOR_RESUME_CKPT" ] && CMD="$CMD --resume \"$BOT_PRIOR_RESUME_CKPT\""
     [ "$WANDB_ENABLED" = "true" ] && CMD="$CMD --wandb --wandb-project \"$WANDB_PROJECT\""
     [ -n "$WANDB_ENTITY" ] && CMD="$CMD --wandb-entity \"$WANDB_ENTITY\""
     [ -n "$WANDB_RUN_NAME" ] && CMD="$CMD --wandb-run-name \"$WANDB_RUN_NAME\""
@@ -164,6 +167,7 @@ case "$COMMAND" in
         echo "  DATA_DIR, VQVAE_CKPT, CODES_DIR"
         echo "  TOP_BATCH_SIZE, TOP_MAX_EPOCHS, TOP_LR, TOP_COND_DIM"
         echo "  BOT_BATCH_SIZE, BOT_MAX_EPOCHS, BOT_LR, BOT_COND_DIM"
+        echo "  BOT_PRIOR_RESUME_CKPT  Path to bottom prior checkpoint to resume from"
         echo "  GPUS, WANDB_ENABLED, WANDB_PROJECT"
         echo "  N_SAMPLES, OUTPUT_FILE, PLOT, COND_DIM (must match prior training; default 128)"
         echo "  N_TEST, K_PER_FEATURE, TEST_OUT_DIR, TEST_SEED (for test_sample)"

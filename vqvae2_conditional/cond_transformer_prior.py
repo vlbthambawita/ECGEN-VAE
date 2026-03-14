@@ -1016,6 +1016,8 @@ def main():
     bp.add_argument("--wandb-project",    type=str, default="cond-vqvae2-prior")
     bp.add_argument("--wandb-entity",     type=str, default=None)
     bp.add_argument("--wandb-run-name",   type=str, default=None)
+    bp.add_argument("--resume",           type=str, default=None,
+                    help="Path to checkpoint to resume from (e.g. logs/cond_bot_prior/version_0/checkpoints/last.ckpt)")
 
     # ------------------------------------------------------------------ sample
     sp = sub.add_parser("sample", help="Generate ECGs conditioned on clinical features")
@@ -1097,7 +1099,8 @@ def main():
         hp.cond_dim      = args.cond_dim
         model = CondBottomPriorLightning(hp)
         dm    = CondCodeDataModule(args.codes_dir, hp)
-        build_trainer(args, "cond_bot_prior").fit(model, dm)
+        ckpt_path = getattr(args, 'resume', None)
+        build_trainer(args, "cond_bot_prior").fit(model, dm, ckpt_path=ckpt_path)
 
     elif args.command == "sample":
         hp = CondPriorHParams()
