@@ -101,6 +101,10 @@ BOT_CKPT_PATH="${BOT_CKPT_PATH:-}"
 # Weights & Biases settings for Prior
 WANDB_PROJECT_PRIOR="${WANDB_PROJECT_PRIOR:-vqvae2-prior}"
 
+# Resume VQ-VAE from checkpoint: set VQVAE_CKPT_PATH or RESUME_VQVAE=true to use last.ckpt
+VQVAE_CKPT_PATH="${VQVAE_CKPT_PATH:-/work/vajira/DL2026/ECGEN-VAE/vqvae2/runs/vqvae2_mimic/seed_42/checkpoints/last.ckpt}"
+RESUME_VQVAE="${RESUME_VQVAE:-true}"
+
 # Resume/skip: set RESUME_STEP=4 to run only step 4 (useful with BOT_CKPT_PATH)
 RESUME_STEP="${RESUME_STEP:-}"
 
@@ -185,6 +189,16 @@ train_vqvae2() {
     
     validate_data_dir
     
+    # Resolve VQ-VAE checkpoint path for resume
+    local VQVAE_RESUME_CKPT=""
+    if [ "$RESUME_VQVAE" = "true" ] && [ -z "$VQVAE_CKPT_PATH" ]; then
+        VQVAE_CKPT_PATH="$RUNS_ROOT/$EXP_NAME/seed_$SEED/checkpoints/last.ckpt"
+    fi
+    if [ -n "$VQVAE_CKPT_PATH" ] && [ -f "$VQVAE_CKPT_PATH" ]; then
+        VQVAE_RESUME_CKPT="$VQVAE_CKPT_PATH"
+        print_info "Resuming VQ-VAE from: $VQVAE_RESUME_CKPT"
+    fi
+    
     print_info "Configuration:"
     print_info "  Data directory: $DATA_DIR"
     print_info "  Experiment name: $EXP_NAME"
@@ -233,6 +247,11 @@ train_vqvae2() {
     # Add max samples if not null
     if [ "$MAX_SAMPLES" != "null" ]; then
         CMD="$CMD --max-samples $MAX_SAMPLES"
+    fi
+    
+    # Add checkpoint path for resume
+    if [ -n "$VQVAE_RESUME_CKPT" ]; then
+        CMD="$CMD --ckpt-path \"$VQVAE_RESUME_CKPT\""
     fi
     
     # Add W&B flags if enabled

@@ -5,7 +5,7 @@ ECG Plotting Script for VQ-VAE-2 Generated Samples
 Visualize generated ECG samples using the ecg-plot library.
 
 Usage:
-    python plot_ecgs.py --input generated_ecgs.npy --output-dir plots --n-samples 8
+    python plot_ecgs.py --input generated_ecgs.npy --output-dir samples --n-samples 8
 """
 
 import argparse
@@ -197,7 +197,7 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="plots",
+        default="samples",
         help="Directory to save generated plots",
     )
     

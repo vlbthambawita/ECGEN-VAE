@@ -60,7 +60,7 @@ WANDB_RUN_NAME="${WANDB_RUN_NAME:-}"
 
 # Prior checkpoints (for sampling)
 TOP_PRIOR_CKPT="${TOP_PRIOR_CKPT:-logs/top_prior/version_0/checkpoints/last.ckpt}"
-BOT_PRIOR_CKPT="${BOT_PRIOR_CKPT:-logs/bot_prior/version_0/checkpoints/last.ckpt}"
+BOT_PRIOR_CKPT="${BOT_PRIOR_CKPT:-logs/bot_prior/version_1/checkpoints/last.ckpt}"
 
 # Sampling settings
 N_SAMPLES="${N_SAMPLES:-16}"
@@ -70,7 +70,7 @@ TOP_P="${TOP_P:-0.95}"
 OUTPUT_FILE="${OUTPUT_FILE:-generated_ecgs.npy}"
 
 # Plotting settings
-PLOT_DIR="${PLOT_DIR:-plots}"
+PLOT_DIR="${PLOT_DIR:-samples}"
 PLOT_N_SAMPLES="${PLOT_N_SAMPLES:-}"
 PLOT_PREFIX="${PLOT_PREFIX:-ecg_}"
 PLOT_STYLE="${PLOT_STYLE:-}"
@@ -319,6 +319,11 @@ sample_ecgs() {
     echo ""
     
     eval $CMD
+    
+    # Save generated samples as plots to samples folder
+    print_info "Saving generated samples as plots to $PLOT_DIR/"
+    mkdir -p "$PLOT_DIR"
+    plot_ecgs
 }
 
 plot_ecgs() {
@@ -422,7 +427,7 @@ case "$COMMAND" in
         echo "  WANDB_RUN_NAME                W&B run name"
         echo "  N_SAMPLES                     Number of samples to generate (default: 16)"
         echo "  OUTPUT_FILE                   Output file for generated ECGs (default: generated_ecgs.npy)"
-        echo "  PLOT_DIR                      Output directory for plots (default: plots)"
+        echo "  PLOT_DIR                      Output directory for plots (default: samples)"
         echo "  PLOT_N_SAMPLES                Number of samples to plot (default: all)"
         echo "  PLOT_PREFIX                   Filename prefix for plots (default: ecg_)"
         echo "  PLOT_STYLE                    Plot style: standard or 'bw' (default: standard)"

@@ -971,9 +971,12 @@ def train_vqvae2(args):
 
     print(f"Run directory: {run_dir}")
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    if getattr(args, "ckpt_path", None):
+        print(f"Resuming from checkpoint: {args.ckpt_path}")
     print()
 
-    trainer.fit(model=model, datamodule=datamodule)
+    ckpt_path = getattr(args, "ckpt_path", None)
+    trainer.fit(model=model, datamodule=datamodule, ckpt_path=ckpt_path)
 
     print()
     print("=" * 80)
@@ -1052,6 +1055,8 @@ def parse_args():
     fit_p.add_argument("--seed", type=int, default=42, help="Random seed")
     fit_p.add_argument("--runs-root", type=str, default="runs",
                        help="Root directory for runs")
+    fit_p.add_argument("--ckpt-path", type=str, default=None,
+                       help="Resume training from checkpoint (e.g. last.ckpt)")
     
     fit_p.add_argument("--batch-size", type=int, default=32, help="Batch size")
     fit_p.add_argument("--num-workers", type=int, default=4,

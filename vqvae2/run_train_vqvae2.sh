@@ -68,6 +68,7 @@ WANDB_TAGS="${WANDB_TAGS:-}"
 N_SAMPLES="${N_SAMPLES:-16}"
 TEMPERATURE="${TEMPERATURE:-1.0}"
 OUTPUT_FILE="${OUTPUT_FILE:-samples.npy}"
+SAMPLES_DIR="${SAMPLES_DIR:-samples}"
 
 # ============================================================================
 # Helper Functions
@@ -261,6 +262,13 @@ sample_vqvae2() {
     echo ""
     
     eval $CMD
+    
+    # Save generated samples as plots to samples directory
+    if [ -f "plot_ecgs.py" ] && [ -f "$OUTPUT_FILE" ]; then
+        print_info "Saving generated samples as plots to $SAMPLES_DIR/"
+        mkdir -p "$SAMPLES_DIR"
+        python plot_ecgs.py --input "$OUTPUT_FILE" --output-dir "$SAMPLES_DIR"
+    fi
 }
 
 # ============================================================================
@@ -313,6 +321,8 @@ case "$COMMAND" in
         echo "  EMBEDDING_DIM                 Embedding dimension (default: 64)"
         echo "  WANDB_ENABLED                 Enable W&B logging (default: true)"
         echo "  DEVICES                       GPU device IDs (default: 0)"
+        echo "  OUTPUT_FILE                   Output .npy file for samples (default: samples.npy)"
+        echo "  SAMPLES_DIR                   Output directory for sample plots (default: samples)"
         echo ""
         echo "Examples:"
         echo "  $0 fit"

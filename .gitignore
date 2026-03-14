@@ -7,6 +7,7 @@ vqvae2/logs/
 vqvae2/wandb/
 vqvae2/generated_samples/
 vqvae2/runs/
+vqvae2/samples/
 plots/
 
 vqvae2_conditional/runs/
