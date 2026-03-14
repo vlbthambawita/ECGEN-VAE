@@ -1,0 +1,12 @@
+{
+  "used_codes": 441,
+  "total_codes": 1024,
+  "usage_pct": 43.07,
+  "top20pct_coverage": 81.04,
+  "mean_recon_loss": 0.011669,
+  "std_recon_loss": 0.000511,
+  "mean_vq_loss": 0.003748,
+  "std_vq_loss": 0.000149,
+  "n_samples_analysed": 2000,
+  "latent_length": 625
+}

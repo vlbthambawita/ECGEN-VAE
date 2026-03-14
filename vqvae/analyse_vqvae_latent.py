@@ -23,10 +23,27 @@ A compact JSON summary (stats.json) is also written.
 
 Usage
 -----
+    # MIMIC-IV-ECG (default)
     python analyse_vqvae_latent.py \
         --checkpoint runs/vqvae_mimic/seed_42/checkpoints/best.ckpt \
+        --dataset mimic \
         --data-dir /path/to/mimic-iv-ecg \
         --max-samples 2000 \
+        --output-dir latent_analysis
+
+    # PTB-XL test split
+    python analyse_vqvae_latent.py \
+        --checkpoint runs/vqvae_mimic/seed_42/checkpoints/best.ckpt \
+        --dataset ptbxl \
+        --data-dir /path/to/ptb-xl \
+        [--muse-path /path/to/ptb-xl-plus] \
+        --output-dir latent_analysis
+
+    # Deepfake ECG (.asc files)
+    python analyse_vqvae_latent.py \
+        --checkpoint runs/vqvae_mimic/seed_42/checkpoints/best.ckpt \
+        --dataset deepfake \
+        --data-dir /path/to/deepfake-ecg-dir \
         --output-dir latent_analysis
 """
 
@@ -47,15 +64,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import wfdb
 from sklearn.decomposition import PCA
-from sklearn.model_selection import train_test_split
 from torch import Tensor
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
 try:
     import umap
@@ -66,6 +80,12 @@ except ImportError:
           "Install with: pip install umap-learn")
 
 import pytorch_lightning as pl
+
+# Add project root to path for data package import (when run from vqvae/)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+from data import LEAD_NAMES, DeepfakeECGDataset, MIMICTestDataset, PTBXLDataset
 
 # ---------------------------------------------------------------------------
 # Reproducibility
@@ -270,94 +290,11 @@ class VQVAELightning(pl.LightningModule):
 
 
 # ============================================================================
-# Dataset (minimal — test split only)
-# ============================================================================
-
-FEATURE_NAMES = [
-    "rr_interval", "p_onset", "p_end", "qrs_onset", "qrs_end", "t_end",
-    "p_axis", "qrs_axis", "t_axis",
-]
-
-class MIMICTestDataset(Dataset):
-    """Loads the test split from MIMIC-IV-ECG."""
-
-    def __init__(self, data_dir: str, max_samples: Optional[int],
-                 seq_length: int, seed: int,
-                 val_split: float = 0.1, test_split: float = 0.1) -> None:
-        self.data_dir = Path(data_dir)
-        self.seq_length = seq_length
-
-        records_csv = self.data_dir / "record_list.csv"
-        if not records_csv.exists():
-            raise FileNotFoundError(f"record_list.csv not found in {data_dir}")
-
-        df = pd.read_csv(records_csv)
-
-        # Try to load machine measurements
-        machine_csv = self.data_dir / "machine_measurements.csv"
-        if machine_csv.exists():
-            meas = pd.read_csv(machine_csv)
-            df = df.merge(meas, on="study_id", how="left") if "study_id" in df.columns \
-                 else df.merge(meas, left_index=True, right_index=True, how="left")
-        for fn in FEATURE_NAMES:
-            if fn not in df.columns:
-                df[fn] = 0.0
-
-        # 80 / 10 / 10 split — reproduce training split exactly
-        train_df, temp_df = train_test_split(df, test_size=val_split + test_split,
-                                             random_state=seed)
-        val_df, test_df = train_test_split(temp_df,
-                                           test_size=test_split / (val_split + test_split),
-                                           random_state=seed)
-
-        if max_samples:
-            test_df = test_df.head(max_samples)
-
-        self.df = test_df.reset_index(drop=True)
-
-        # Feature stats from train set
-        feat = train_df[FEATURE_NAMES].values.astype(np.float32)
-        self.feature_mean = np.nanmean(feat, axis=0)
-        self.feature_std  = np.nanstd(feat, axis=0) + 1e-6
-
-        print(f"[Dataset] Test samples: {len(self.df)}")
-
-    def __len__(self) -> int:
-        return len(self.df)
-
-    def __getitem__(self, idx: int):
-        row = self.df.iloc[idx]
-        path = str(self.data_dir / row["path"])
-        try:
-            record = wfdb.rdrecord(path)
-            ecg = record.p_signal.T.astype(np.float32)      # [12, T]
-        except Exception:
-            ecg = np.zeros((12, self.seq_length), dtype=np.float32)
-
-        # Pad / crop
-        T = ecg.shape[1]
-        if T >= self.seq_length:
-            ecg = ecg[:, :self.seq_length]
-        else:
-            ecg = np.pad(ecg, ((0, 0), (0, self.seq_length - T)))
-
-        # Normalise per sample
-        std = ecg.std() + 1e-6
-        ecg = (ecg - ecg.mean()) / std
-
-        features = row[FEATURE_NAMES].values.astype(np.float32)
-        features = (features - self.feature_mean) / self.feature_std
-
-        return torch.from_numpy(ecg), torch.from_numpy(features)
-
-
-# ============================================================================
 # Plotting helpers
 # ============================================================================
 
 PALETTE = plt.cm.tab20.colors
 FIG_DPI = 150
-LEAD_NAMES = ["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]
 
 
 def save(fig: plt.Figure, path: Path) -> None:
@@ -615,8 +552,12 @@ def parse_args():
     p = argparse.ArgumentParser(description="VQ-VAE latent space analysis")
     p.add_argument("--checkpoint", type=str, required=True,
                    help="Path to VQ-VAE Lightning checkpoint (best.ckpt)")
+    p.add_argument("--dataset", type=str, choices=["mimic", "ptbxl", "deepfake"], default="mimic",
+                   help="Test dataset: mimic, ptbxl, or deepfake (.asc files)")
     p.add_argument("--data-dir", type=str, required=True,
-                   help="Path to MIMIC-IV-ECG dataset root")
+                   help="Path to dataset (MIMIC: record_list.csv; PTB-XL: ptbxl_database.csv; deepfake: .asc dir)")
+    p.add_argument("--muse-path", type=str, default=None,
+                   help="Optional path to PTB-XL+ MUSE reports (only for --dataset ptbxl)")
     p.add_argument("--output-dir", type=str, default="latent_analysis",
                    help="Directory to write all output figures")
     p.add_argument("--max-samples", type=int, default=1000,
@@ -660,15 +601,31 @@ def main():
     # ------------------------------------------------------------------
     # Build dataset / dataloader
     # ------------------------------------------------------------------
-    print(f"\n[2/4] Building test dataset (max_samples={args.max_samples})")
-    dataset = MIMICTestDataset(
-        data_dir=args.data_dir,
-        max_samples=args.max_samples,
-        seq_length=args.seq_length,
-        seed=args.seed,
-        val_split=args.val_split,
-        test_split=args.test_split,
-    )
+    print(f"\n[2/4] Building test dataset ({args.dataset}, max_samples={args.max_samples})")
+    if args.dataset == "ptbxl":
+        dataset = PTBXLDataset(
+            ptbxl_path=args.data_dir,
+            split="test",
+            muse_path=args.muse_path,
+            seq_length=args.seq_length,
+            max_samples=args.max_samples,
+            seed=args.seed,
+        )
+    elif args.dataset == "deepfake":
+        dataset = DeepfakeECGDataset(
+            data_dir=args.data_dir,
+            max_samples=args.max_samples,
+            seq_length=args.seq_length,
+        )
+    else:
+        dataset = MIMICTestDataset(
+            data_dir=args.data_dir,
+            max_samples=args.max_samples,
+            seq_length=args.seq_length,
+            seed=args.seed,
+            val_split=args.val_split,
+            test_split=args.test_split,
+        )
     loader = DataLoader(dataset, batch_size=args.batch_size,
                         shuffle=False, num_workers=args.num_workers,
                         pin_memory=False)

@@ -42,6 +42,8 @@ from sklearn.model_selection import train_test_split
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 
+from data import PTBXLDataset
+
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (
     Callback,
@@ -869,6 +871,74 @@ class VQVAEMIMICDataModule(pl.LightningDataModule):
         )
 
 
+class VQVAEPTBLDataModule(pl.LightningDataModule):
+    """Data module for VQ-VAE training with PTB-XL (optionally filtered by SCP superclass)."""
+
+    def __init__(
+        self,
+        ptbxl_path: str,
+        batch_size: int = 32,
+        num_workers: int = 4,
+        max_samples: int = None,
+        seed: int = 42,
+        num_leads: int = 12,
+        seq_length: int = 5000,
+        scp_superclass: Optional[str] = None,
+        muse_path: Optional[str] = None,
+    ):
+        super().__init__()
+        self.ptbxl_path = ptbxl_path
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.max_samples = max_samples
+        self.seed = seed
+        self.num_leads = num_leads
+        self.seq_length = seq_length
+        self.scp_superclass = scp_superclass
+        self.muse_path = muse_path
+
+    def setup(self, stage=None):
+        if stage == "fit" or stage is None:
+            self.train_dataset = PTBXLDataset(
+                ptbxl_path=self.ptbxl_path,
+                split="train",
+                muse_path=self.muse_path,
+                scp_superclass=self.scp_superclass,
+                seq_length=self.seq_length,
+                num_leads=self.num_leads,
+                max_samples=self.max_samples,
+                seed=self.seed,
+            )
+            self.val_dataset = PTBXLDataset(
+                ptbxl_path=self.ptbxl_path,
+                split="val",
+                muse_path=self.muse_path,
+                scp_superclass=self.scp_superclass,
+                seq_length=self.seq_length,
+                num_leads=self.num_leads,
+                max_samples=self.max_samples,
+                seed=self.seed,
+            )
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=True,
+            pin_memory=True,
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=False,
+            pin_memory=True,
+        )
+
+
 # ============================================================================
 # Visualization Callback
 # ============================================================================
@@ -994,21 +1064,31 @@ def train_stage1_vqvae(args):
     print("=" * 80)
     print("STAGE 1: Training VQ-VAE")
     print("=" * 80)
-    
-    # Validate data directory
-    if not os.path.exists(args.data_dir):
-        print(f"ERROR: Data directory does not exist: {args.data_dir}")
-        print("Please set the correct path using --data-dir or DATA_DIR environment variable")
-        sys.exit(1)
-    
-    measurements_file = os.path.join(args.data_dir, "machine_measurements.csv")
-    if not os.path.exists(measurements_file):
-        print(f"ERROR: machine_measurements.csv not found at: {measurements_file}")
-        print("Please ensure you have the correct MIMIC-IV-ECG dataset path")
-        sys.exit(1)
-    
-    print(f"Data directory: {args.data_dir}")
-    print(f"Measurements file: {measurements_file}")
+
+    # Validate data directory and choose data source
+    if args.dataset == "mimic":
+        if not os.path.exists(args.data_dir):
+            print(f"ERROR: Data directory does not exist: {args.data_dir}")
+            print("Please set the correct path using --data-dir")
+            sys.exit(1)
+        measurements_file = os.path.join(args.data_dir, "machine_measurements.csv")
+        if not os.path.exists(measurements_file):
+            print(f"ERROR: machine_measurements.csv not found at: {measurements_file}")
+            print("Please ensure you have the correct MIMIC-IV-ECG dataset path")
+            sys.exit(1)
+        print(f"Data directory: {args.data_dir}")
+        print(f"Dataset: MIMIC-IV-ECG")
+    else:
+        ptbxl_path = args.ptbxl_path if args.ptbxl_path else args.data_dir
+        if not os.path.exists(ptbxl_path):
+            print(f"ERROR: PTB-XL path does not exist: {ptbxl_path}")
+            sys.exit(1)
+        db_file = os.path.join(ptbxl_path, "ptbxl_database.csv")
+        if not os.path.exists(db_file):
+            print(f"ERROR: ptbxl_database.csv not found at: {db_file}")
+            sys.exit(1)
+        print(f"PTB-XL path: {ptbxl_path}")
+        print(f"Dataset: PTB-XL (scp_superclass={args.ptbxl_scp_class})")
 
     set_global_seed(args.seed)
 
@@ -1018,33 +1098,59 @@ def train_stage1_vqvae(args):
     for d in (checkpoints_dir, samples_dir):
         d.mkdir(parents=True, exist_ok=True)
 
-    model_config = VQVAEConfig(
-        in_channels=args.in_channels,
-        base_channels=args.base_channels,
-        latent_channels=args.latent_channels,
-        channel_multipliers=(1, 2, 4, 4),
-        num_res_blocks=args.num_res_blocks,
-        num_embeddings=args.num_embeddings,
-        commitment_cost=args.commitment_cost,
-        lr=args.lr,
-        b1=args.b1,
-        b2=args.b2,
-    )
+    # Build model: from checkpoint (finetune) or fresh
+    if args.load_checkpoint:
+        if not Path(args.load_checkpoint).exists():
+            print(f"ERROR: Checkpoint not found: {args.load_checkpoint}")
+            sys.exit(1)
+        print(f"Finetuning from checkpoint: {args.load_checkpoint}")
+        model = VQVAELightning.load_from_checkpoint(args.load_checkpoint)
+        # Override learning rate for finetuning
+        model.config.lr = args.lr
+        if hasattr(model, "hparams") and model.hparams is not None and "lr" in model.hparams:
+            model.hparams["lr"] = args.lr
+    else:
+        model_config = VQVAEConfig(
+            in_channels=args.in_channels,
+            base_channels=args.base_channels,
+            latent_channels=args.latent_channels,
+            channel_multipliers=(1, 2, 4, 4),
+            num_res_blocks=args.num_res_blocks,
+            num_embeddings=args.num_embeddings,
+            commitment_cost=args.commitment_cost,
+            lr=args.lr,
+            b1=args.b1,
+            b2=args.b2,
+        )
+        model = VQVAELightning(model_config)
 
-    model = VQVAELightning(model_config)
-
-    datamodule = VQVAEMIMICDataModule(
-        data_dir=args.data_dir,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        val_split=args.val_split,
-        test_split=args.test_split,
-        max_samples=args.max_samples,
-        seed=args.seed,
-        skip_missing_check=args.skip_missing_check,
-        num_leads=args.in_channels,
-        seq_length=args.seq_length,
-    )
+    # Build datamodule
+    if args.dataset == "mimic":
+        datamodule = VQVAEMIMICDataModule(
+            data_dir=args.data_dir,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            val_split=args.val_split,
+            test_split=args.test_split,
+            max_samples=args.max_samples,
+            seed=args.seed,
+            skip_missing_check=args.skip_missing_check,
+            num_leads=args.in_channels,
+            seq_length=args.seq_length,
+        )
+    else:
+        ptbxl_path = args.ptbxl_path if args.ptbxl_path else args.data_dir
+        datamodule = VQVAEPTBLDataModule(
+            ptbxl_path=ptbxl_path,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            max_samples=args.max_samples,
+            seed=args.seed,
+            num_leads=args.in_channels,
+            seq_length=args.seq_length,
+            scp_superclass=args.ptbxl_scp_class,
+            muse_path=None,
+        )
 
     # Setup loggers
     loggers_list = []
@@ -1165,16 +1271,23 @@ def train_stage2_prior(args):
     print("=" * 80)
     
     # Validate data directory
-    if not os.path.exists(args.data_dir):
-        print(f"ERROR: Data directory does not exist: {args.data_dir}")
-        print("Please set the correct path using --data-dir or DATA_DIR environment variable")
-        sys.exit(1)
-    
-    measurements_file = os.path.join(args.data_dir, "machine_measurements.csv")
-    if not os.path.exists(measurements_file):
-        print(f"ERROR: machine_measurements.csv not found at: {measurements_file}")
-        print("Please ensure you have the correct MIMIC-IV-ECG dataset path")
-        sys.exit(1)
+    if args.dataset == "mimic":
+        if not os.path.exists(args.data_dir):
+            print(f"ERROR: Data directory does not exist: {args.data_dir}")
+            sys.exit(1)
+        measurements_file = os.path.join(args.data_dir, "machine_measurements.csv")
+        if not os.path.exists(measurements_file):
+            print(f"ERROR: machine_measurements.csv not found at: {measurements_file}")
+            sys.exit(1)
+    else:
+        ptbxl_path = args.ptbxl_path if args.ptbxl_path else args.data_dir
+        if not os.path.exists(ptbxl_path):
+            print(f"ERROR: PTB-XL path does not exist: {ptbxl_path}")
+            sys.exit(1)
+        db_file = os.path.join(ptbxl_path, "ptbxl_database.csv")
+        if not os.path.exists(db_file):
+            print(f"ERROR: ptbxl_database.csv not found at: {db_file}")
+            sys.exit(1)
 
     if not args.vqvae_checkpoint:
         print("Error: --vqvae-checkpoint is required for Stage 2")
@@ -1204,18 +1317,32 @@ def train_stage2_prior(args):
 
     model = PriorLightning(model_config)
 
-    datamodule = VQVAEMIMICDataModule(
-        data_dir=args.data_dir,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        val_split=args.val_split,
-        test_split=args.test_split,
-        max_samples=args.max_samples,
-        seed=args.seed,
-        skip_missing_check=args.skip_missing_check,
-        num_leads=12,
-        seq_length=args.seq_length,
-    )
+    if args.dataset == "mimic":
+        datamodule = VQVAEMIMICDataModule(
+            data_dir=args.data_dir,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            val_split=args.val_split,
+            test_split=args.test_split,
+            max_samples=args.max_samples,
+            seed=args.seed,
+            skip_missing_check=args.skip_missing_check,
+            num_leads=12,
+            seq_length=args.seq_length,
+        )
+    else:
+        ptbxl_path = args.ptbxl_path if args.ptbxl_path else args.data_dir
+        datamodule = VQVAEPTBLDataModule(
+            ptbxl_path=ptbxl_path,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            max_samples=args.max_samples,
+            seed=args.seed,
+            num_leads=12,
+            seq_length=args.seq_length,
+            scp_superclass=args.ptbxl_scp_class,
+            muse_path=None,
+        )
 
     # Setup loggers
     loggers_list = []
@@ -1339,7 +1466,15 @@ def parse_args():
     parser.add_argument("--runs-root", type=str, default="runs", help="Root directory for runs")
 
     # Data
-    parser.add_argument("--data-dir", type=str, required=True, help="Path to MIMIC-IV-ECG dataset")
+    parser.add_argument("--data-dir", type=str, required=True, help="Path to dataset (MIMIC-IV-ECG or PTB-XL root)")
+    parser.add_argument("--dataset", type=str, choices=["mimic", "ptbxl"], default="mimic",
+                        help="Data source: mimic (MIMIC-IV-ECG) or ptbxl (PTB-XL)")
+    parser.add_argument("--ptbxl-path", type=str, default=None,
+                        help="Path to PTB-XL root (default: same as --data-dir when --dataset ptbxl)")
+    parser.add_argument("--ptbxl-scp-class", type=str, default="HYP",
+                        help="PTB-XL SCP superclass filter, e.g. HYP for Hypertrophy (only when --dataset ptbxl)")
+    parser.add_argument("--load-checkpoint", type=str, default=None,
+                        help="Path to VQ-VAE checkpoint to finetune from (Stage 1 only)")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--num-workers", type=int, default=4, help="Number of data loading workers")
     parser.add_argument("--max-samples", type=int, default=None, help="Max samples (for debugging)")

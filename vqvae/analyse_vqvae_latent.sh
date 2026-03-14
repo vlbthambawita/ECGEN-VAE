@@ -20,28 +20,55 @@
 #
 #   # Run on CPU (no GPU)
 #   DEVICE=cpu ./run_analyse_vqvae_latent.sh
+#
+#   # Use PTB-XL test split instead of MIMIC
+#   DATASET=ptbxl PTBXL_PATH=/path/to/ptb-xl ./run_analyse_vqvae_latent.sh
+#
+#   # PTB-XL with optional MUSE reports
+#   DATASET=ptbxl PTBXL_PATH=/path/to/ptb-xl MUSE_PATH=/path/to/ptb-xl-plus ./run_analyse_vqvae_latent.sh
+#
+#   # Deepfake ECG (.asc files)
+#   DATASET=deepfake DEEPFAKE_PATH=/path/to/deepfake-ecg-dir ./run_analyse_vqvae_latent.sh
 # ===========================================================================
 
 set -euo pipefail
 
-# ---------------------------------------------------------------------------
-# Data & experiment paths — keep in sync with training script
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Configuration — override via environment variables or first CLI arg for checkpoint
+# ===========================================================================
+
+# Data & experiment paths
+# Dataset: 'mimic' = MIMIC-IV-ECG, 'ptbxl' = PTB-XL, 'deepfake' = .asc files
+DATASET="${DATASET:-deepfake}"
 DATA_DIR="${DATA_DIR:-/work/vajira/data/mimic_iv_original/mimic-iv-ecg-diagnostic-electrocardiogram-matched-subset-1.0}"
+PTBXL_PATH="${PTBXL_PATH:-${DATA_DIR}}"    # used when DATASET=ptbxl
+DEEPFAKE_PATH="${DEEPFAKE_PATH:-/work/vajira/data/Deepfake-ecg/filtered_all_normals_121977/from_006_chck_2500_150k_filtered_all_normals_121977}"  # used when DATASET=deepfake
+MUSE_PATH="${MUSE_PATH:-}"                 # optional PTB-XL+ MUSE reports (only for ptbxl)
 EXP_NAME_STAGE1="${EXP_NAME_STAGE1:-vqvae_mimic_standalone_v2}"
 SEED="${SEED:-42}"
 RUNS_ROOT="${RUNS_ROOT:-runs}"
 
-# ---------------------------------------------------------------------------
-# Checkpoint — can be overridden via env var or first CLI argument
-# ---------------------------------------------------------------------------
-VQVAE_CHECKPOINT="${VQVAE_CHECKPOINT:-}"
+# Checkpoint — leave empty to auto-locate, or set via VQVAE_CHECKPOINT or CLI arg
+VQVAE_CHECKPOINT="${VQVAE_CHECKPOINT:-/work/vajira/DL2026/ECGEN-VAE/runs/vqvae_ptbxl_hyp_finetune_20260314_165552/seed_42/checkpoints/last.ckpt}"
+[ -n "${1:-}" ] && VQVAE_CHECKPOINT="${1}"
 
-if [ -n "${1:-}" ]; then
-    VQVAE_CHECKPOINT="${1}"
-fi
+# Analysis settings
+MAX_SAMPLES="${MAX_SAMPLES:-2000}"           # test samples to analyse; empty = all
+OUTPUT_DIR="${OUTPUT_DIR:-latent_analysis_deepfake_with_hyp_finetuned}"  # output directory for figures and stats.json
+BATCH_SIZE="${BATCH_SIZE:-64}"
+NUM_WORKERS="${NUM_WORKERS:-4}"
+SEQ_LENGTH="${SEQ_LENGTH:-5000}"             # must match training
+VAL_SPLIT="${VAL_SPLIT:-0.1}"
+TEST_SPLIT="${TEST_SPLIT:-0.1}"
+N_RECON_SAMPLES="${N_RECON_SAMPLES:-8}"      # reconstruction plot: samples
+N_RECON_LEADS="${N_RECON_LEADS:-6}"          # reconstruction plot: leads
+N_HEATMAP_SAMPLES="${N_HEATMAP_SAMPLES:-60}" # code heatmap rows
+DEVICE="${DEVICE:-cuda}"                     # 'cuda' or 'cpu'
 
-# Auto-locate best.ckpt if not provided
+# ===========================================================================
+# Checkpoint resolution
+# ===========================================================================
+
 if [ -z "${VQVAE_CHECKPOINT}" ]; then
     CANDIDATE="${RUNS_ROOT}/${EXP_NAME_STAGE1}/seed_${SEED}/checkpoints/best.ckpt"
     if [ -f "${CANDIDATE}" ]; then
@@ -66,36 +93,6 @@ if [ ! -f "${VQVAE_CHECKPOINT}" ]; then
     echo "[ERROR] Checkpoint not found: ${VQVAE_CHECKPOINT}"
     exit 1
 fi
-
-# ---------------------------------------------------------------------------
-# Analysis settings — tweak these freely
-# ---------------------------------------------------------------------------
-
-# How many test samples to analyse. Increase for more robust statistics.
-# The test split is 10% of the dataset; set to empty string for all test samples.
-MAX_SAMPLES="${MAX_SAMPLES:-2000}"
-
-# Output directory for figures and stats.json
-OUTPUT_DIR="${OUTPUT_DIR:-latent_analysis}"
-
-# Data loading
-BATCH_SIZE="${BATCH_SIZE:-64}"
-NUM_WORKERS="${NUM_WORKERS:-4}"
-
-# Must match training
-SEQ_LENGTH="${SEQ_LENGTH:-5000}"
-VAL_SPLIT="${VAL_SPLIT:-0.1}"
-TEST_SPLIT="${TEST_SPLIT:-0.1}"
-
-# Reconstruction plot: how many samples & leads to display
-N_RECON_SAMPLES="${N_RECON_SAMPLES:-8}"
-N_RECON_LEADS="${N_RECON_LEADS:-6}"
-
-# Code heatmap: rows (samples)
-N_HEATMAP_SAMPLES="${N_HEATMAP_SAMPLES:-60}"
-
-# Device: 'cuda' or 'cpu'
-DEVICE="${DEVICE:-cuda}"
 
 # ---------------------------------------------------------------------------
 # Locate the analysis script (same directory as this shell script)
@@ -124,7 +121,8 @@ echo "=========================================="
 echo "  VQ-VAE Latent Space Analysis"
 echo "=========================================="
 echo "  Checkpoint  : ${VQVAE_CHECKPOINT}"
-echo "  Data dir    : ${DATA_DIR}"
+echo "  Dataset     : ${DATASET}"
+echo "  Data dir    : $([ "${DATASET}" = "ptbxl" ] && echo "${PTBXL_PATH}" || [ "${DATASET}" = "deepfake" ] && echo "${DEEPFAKE_PATH}" || echo "${DATA_DIR}")"
 echo "  Max samples : ${MAX_SAMPLES}"
 echo "  Output dir  : ${OUTPUT_DIR}"
 echo "  Device      : ${DEVICE}"
@@ -137,9 +135,14 @@ echo ""
 # ---------------------------------------------------------------------------
 # Build command
 # ---------------------------------------------------------------------------
+if [ "${DATASET}" = "ptbxl" ]; then DATA_PATH="${PTBXL_PATH}"
+elif [ "${DATASET}" = "deepfake" ]; then DATA_PATH="${DEEPFAKE_PATH}"
+else DATA_PATH="${DATA_DIR}"
+fi
 CMD="python ${ANALYSIS_SCRIPT} \
     --checkpoint ${VQVAE_CHECKPOINT} \
-    --data-dir ${DATA_DIR} \
+    --dataset ${DATASET} \
+    --data-dir ${DATA_PATH} \
     --output-dir ${OUTPUT_DIR} \
     --batch-size ${BATCH_SIZE} \
     --num-workers ${NUM_WORKERS} \
@@ -155,6 +158,11 @@ CMD="python ${ANALYSIS_SCRIPT} \
 # Only pass --max-samples if non-empty
 if [ -n "${MAX_SAMPLES}" ]; then
     CMD="${CMD} --max-samples ${MAX_SAMPLES}"
+fi
+
+# Pass --muse-path for PTB-XL if set
+if [ "${DATASET}" = "ptbxl" ] && [ -n "${MUSE_PATH}" ]; then
+    CMD="${CMD} --muse-path ${MUSE_PATH}"
 fi
 
 echo "[INFO] Running:"
