@@ -49,6 +49,23 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor,
     ModelCheckpoint,
 )
+
+
+class ResetEarlyStoppingOnResume(Callback):
+    """Reset EarlyStopping wait counter when resuming so training gets a full patience window."""
+
+    def on_fit_start(self, trainer, pl_module):
+        if trainer.ckpt_path is None:
+            return
+        for cb in trainer.callbacks:
+            if isinstance(cb, EarlyStopping):
+                if hasattr(cb, "wait_count"):
+                    cb.wait_count = 0
+                if hasattr(cb, "_wait_count"):
+                    cb._wait_count = 0
+                if hasattr(cb, "stopped_epoch") and cb.stopped_epoch is not None:
+                    cb.stopped_epoch = None
+                break
 from pytorch_lightning.loggers import TensorBoardLogger
 
 # Optional wandb import
@@ -954,7 +971,8 @@ def train_vqvae2(args):
         num_samples=args.viz_num_samples,
     )
 
-    callbacks = [checkpoint_callback, early_stop_callback, lr_monitor, viz_callback]
+    reset_early_stop = ResetEarlyStoppingOnResume()
+    callbacks = [checkpoint_callback, early_stop_callback, lr_monitor, viz_callback, reset_early_stop]
 
     trainer = pl.Trainer(
         default_root_dir=str(run_dir),

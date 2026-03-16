@@ -9,6 +9,7 @@ vqvae2/generated_samples/
 vqvae2/runs/
 vqvae2/samples/
 plots/
+nvae/outputs/
 
 vqvae2_conditional/runs/
 vqvae2_conditional/test_comparisons/

@@ -25,7 +25,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 DATA_DIR="${DATA_DIR:-/work/vajira/data/mimic_iv_original/mimic-iv-ecg-diagnostic-electrocardiogram-matched-subset-1.0}"
 
 # Experiment settings
-EXP_NAME="${EXP_NAME:-vqvae2_mimic}"
+EXP_NAME="${EXP_NAME:-vqvae2_mimic_v2}"
 SEED="${SEED:-42}"
 RUNS_ROOT="${RUNS_ROOT:-runs}"
 
@@ -49,14 +49,14 @@ COMMITMENT_COST="${COMMITMENT_COST:-0.25}"
 EMA_DECAY="${EMA_DECAY:-0.99}"
 
 # Training settings
-LR="${LR:-0.0003}"
+LR="${LR:-0.0001}"
 MAX_EPOCHS="${MAX_EPOCHS:-200}"
 ACCELERATOR="${ACCELERATOR:-gpu}"
 DEVICES="${DEVICES:-0}"
 LOG_EVERY_N_STEPS="${LOG_EVERY_N_STEPS:-50}"
 CHECK_VAL_EVERY_N_EPOCH="${CHECK_VAL_EVERY_N_EPOCH:-1}"
 GRADIENT_CLIP="${GRADIENT_CLIP:-1.0}"
-PATIENCE="${PATIENCE:-10}"
+PATIENCE="${PATIENCE:-50}"
 SAVE_TOP_K="${SAVE_TOP_K:-3}"
 
 # Visualization settings
@@ -65,7 +65,7 @@ VIZ_NUM_SAMPLES="${VIZ_NUM_SAMPLES:-4}"
 
 # Weights & Biases settings
 WANDB_ENABLED="${WANDB_ENABLED:-true}"
-WANDB_PROJECT="${WANDB_PROJECT:-ecg-vqvae2}"
+WANDB_PROJECT="${WANDB_PROJECT:-ecg-vqvae2-v2}"
 WANDB_ENTITY="${WANDB_ENTITY:-}"
 WANDB_RUN_NAME="${WANDB_RUN_NAME:-}"
 WANDB_TAGS="${WANDB_TAGS:-}"
@@ -75,7 +75,7 @@ WANDB_TAGS="${WANDB_TAGS:-}"
 # ============================================================================
 
 # Codes directory
-CODES_DIR="${CODES_DIR:-codes/vqvae2_mimic}"
+CODES_DIR="${CODES_DIR:-codes/vqvae2_mimic_v2}"
 
 # Extraction settings
 EXTRACT_BATCH_SIZE="${EXTRACT_BATCH_SIZE:-32}"
@@ -99,7 +99,7 @@ BOT_N_HEADS="${BOT_N_HEADS:-8}"
 BOT_CKPT_PATH="${BOT_CKPT_PATH:-}"
 
 # Weights & Biases settings for Prior
-WANDB_PROJECT_PRIOR="${WANDB_PROJECT_PRIOR:-vqvae2-prior}"
+WANDB_PROJECT_PRIOR="${WANDB_PROJECT_PRIOR:-vqvae2-prior-v2}"
 
 # Resume VQ-VAE from checkpoint: set VQVAE_CKPT_PATH or RESUME_VQVAE=true to use last.ckpt
 VQVAE_CKPT_PATH="${VQVAE_CKPT_PATH:-/work/vajira/DL2026/ECGEN-VAE/vqvae2/runs/vqvae2_mimic/seed_42/checkpoints/last.ckpt}"
